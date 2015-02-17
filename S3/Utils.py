@@ -77,7 +77,13 @@ def stripNameSpace(xml):
         xmlns = r.match(xml).groups()[2]
         xml = r.sub("\\1\\2\\4", xml)
     else:
-        xmlns = None
+        r = re.compile('^(<\w+) xmlns=[\'"](http://[^\'"]+)[\'"](.*)', re.MULTILINE)
+        if r.match(xml):
+            xmlns = r.match(xml).groups()[2]
+            xml = r.sub("\\1\\3", xml)
+        else:
+            xmlns = None
+
     return xml, xmlns
 __all__.append("stripNameSpace")
 

@@ -768,6 +768,8 @@ class S3(object):
         return response
 
     def get_policy(self, uri):
+        if 's3.lecloud.com' in self.config.host_base:
+                raise
         request = self.create_request("BUCKET_LIST", bucket = uri.bucket(), extra = "?policy")
         response = self.send_request(request)
         return response['data']
