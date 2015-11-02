@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon S3 manager - Exceptions library
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -5,14 +7,8 @@
 ## Copyright: TGRMN Software and contributors
 
 from Utils import getTreeFromXml, unicodise, deunicodise
-from logging import debug, info, warning, error
+from logging import debug, error
 import ExitCodes
-
-try:
-    import xml.etree.ElementTree as ET
-except ImportError:
-    # xml.etree.ElementTree was only added in python 2.5
-    import elementtree.ElementTree as ET
 
 try:
     from xml.etree.ElementTree import ParseError as XmlParseError
@@ -26,7 +22,7 @@ class S3Exception(Exception):
 
     def __str__(self):
         ## Call unicode(self) instead of self.message because
-        ## __unicode__() method could be overriden in subclasses!
+        ## __unicode__() method could be overridden in subclasses!
         return deunicodise(unicode(self))
 
     def __unicode__(self):
@@ -71,14 +67,15 @@ class S3Error (S3Exception):
     def __unicode__(self):
         retval = u"%d " % (self.status)
         retval += (u"(%s)" % (self.info.has_key("Code") and self.info["Code"] or self.reason))
-        if self.info.has_key("Message"):
-            retval += (u": %s" % self.info["Message"])
+        error_msg = self.info.get("Message")
+        if error_msg:
+            retval += (u": %s" % error_msg)
         return retval
 
     def get_error_code(self):
         if self.status in [301, 307]:
             return ExitCodes.EX_SERVERMOVED
-        elif self.status in [400, 405, 411, 416, 501]:
+        elif self.status in [400, 405, 411, 416, 501, 504]:
             return ExitCodes.EX_SERVERERROR
         elif self.status == 403:
             return ExitCodes.EX_ACCESSDENIED

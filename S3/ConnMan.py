@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon S3 manager
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -7,9 +9,8 @@
 import sys
 import httplib
 import ssl
-from urlparse import urlparse
 from threading import Semaphore
-from logging import debug, info, warning, error
+from logging import debug
 
 from Config import Config
 from Exceptions import ParameterError
@@ -27,10 +28,26 @@ class http_connection(object):
 
     @staticmethod
     def _ssl_verified_context(cafile):
+        cfg = Config()
         context = None
         try:
             context = ssl.create_default_context(cafile=cafile)
         except AttributeError: # no ssl.create_default_context
+            pass
+        if context and not cfg.check_ssl_hostname:
+            context.check_hostname = False
+            debug(u'Disabling SSL certificate hostname checking')
+
+        return context
+
+    @staticmethod
+    def _ssl_unverified_context(cafile):
+        debug(u'Disabling SSL certificate checking')
+        context = None
+        try:
+            context = ssl._create_unverified_context(cafile=cafile,
+                                                     cert_reqs=ssl.CERT_NONE)
+        except AttributeError: # no ssl._create_unverified_context
             pass
         return context
 
@@ -45,11 +62,10 @@ class http_connection(object):
             cafile = None
         debug(u"Using ca_certs_file %s" % cafile)
 
-        context = http_connection._ssl_verified_context(cafile)
-
-        if context and not cfg.check_ssl_certificate:
-            context.check_hostname = False
-            debug(u'Disabling hostname checking')
+        if cfg.check_ssl_certificate:
+            context = http_connection._ssl_verified_context(cafile)
+        else:
+            context = http_connection._ssl_unverified_context(cafile)
 
         http_connection.context = context
         http_connection.context_set = True
@@ -73,17 +89,20 @@ class http_connection(object):
         hostname for the *.s3.amazonaws.com wildcard cert, and for the
         region-specific *.s3-[region].amazonaws.com wildcard cert.
         """
+        debug(u'checking SSL subjectAltName against amazonaws.com')
         san = cert.get('subjectAltName', ())
         for key, value in san:
             if key == 'DNS':
-                if value.startswith('*.s3') and value.endswith('.amazonaws.com') and self.c.host.endswith('.amazonaws.com'):
+                if value.startswith('*.s3') and \
+                   (value.endswith('.amazonaws.com') and self.hostname.endswith('.amazonaws.com')) or \
+                   (value.endswith('.amazonaws.com.cn') and self.hostname.endswith('.amazonaws.com.cn')):
                     return
         raise e
 
     def match_hostname(self):
         cert = self.c.sock.getpeercert()
         try:
-            ssl.match_hostname(cert, self.c.host)
+            ssl.match_hostname(cert, self.hostname)
         except AttributeError: # old ssl module doesn't have this function
             return
         except ValueError: # empty SSL cert means underlying SSL library didn't validate it, we don't either.
@@ -96,7 +115,7 @@ class http_connection(object):
         try:
             context = http_connection._ssl_context()
             # S3's wildcart certificate doesn't work with DNS-style named buckets.
-            if hostname.endswith('.amazonaws.com') and context:
+            if (hostname.endswith('.amazonaws.com') or hostname.endswith('.amazonaws.com.cn')) and context:
                 # this merely delays running the hostname check until
                 # after the connection is made and we get control
                 # back.  We then run the same check, relaxed for S3's
@@ -111,6 +130,7 @@ class http_connection(object):
         self.ssl = ssl
         self.id = id
         self.counter = 0
+        self.hostname = hostname
 
         if not ssl:
             if cfg.proxy_host != "":
@@ -158,7 +178,7 @@ class ConnMan(object):
             debug("ConnMan.get(): creating new connection: %s" % conn_id)
             conn = http_connection(conn_id, hostname, ssl, cfg)
             conn.c.connect()
-            if conn.ssl:
+            if conn.ssl and cfg.check_ssl_certificate and cfg.check_ssl_hostname:
                 conn.match_hostname()
         conn.counter += 1
         return conn

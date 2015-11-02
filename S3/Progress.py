@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon S3 manager
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -48,7 +50,7 @@ class Progress(object):
         self.display(done_message = message)
 
     def output_labels(self):
-        self._stdout.write(u"%(source)s -> %(destination)s  %(extra)s\n" % self.labels)
+        self._stdout.write(u"'%(source)s' -> '%(destination)s'  %(extra)s\n" % self.labels)
         self._stdout.flush()
 
     def _display_needed(self):

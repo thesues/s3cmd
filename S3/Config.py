@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon S3 manager
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -5,7 +7,7 @@
 ## Copyright: TGRMN Software and contributors
 
 import logging
-from logging import debug, info, warning, error
+from logging import debug, warning, error
 import re
 import os
 import sys
@@ -15,7 +17,7 @@ import httplib
 import locale
 try:
     import json
-except ImportError, e:
+except ImportError:
     pass
 
 class Config(object):
@@ -27,14 +29,16 @@ class Config(object):
     access_token = ""
     host_base = "s3.amazonaws.com"
     host_bucket = "%(bucket)s.s3.amazonaws.com"
+    kms_key = ""    #can't set this and Server Side Encryption at the same time
     simpledb_host = "sdb.amazonaws.com"
     cloudfront_host = "cloudfront.amazonaws.com"
     verbosity = logging.WARNING
-    progress_meter = True
+    progress_meter = sys.stdout.isatty()
     progress_class = Progress.ProgressCR
-    send_chunk = 4096
-    recv_chunk = 4096
+    send_chunk = 64 * 1024
+    recv_chunk = 64 * 1024
     list_md5 = False
+    long_listing = False
     human_readable_sizes = False
     extra_headers = SortedDict(ignore_case = True)
     force = False
@@ -72,14 +76,15 @@ class Config(object):
     delete_after_fetch = False
     max_delete = -1
     _doc['delete_removed'] = "[sync] Remove remote S3 objects when local file has been deleted"
-    delay_updates = False
+    delay_updates = False  # OBSOLETE
     gpg_passphrase = ""
     gpg_command = ""
     gpg_encrypt = "%(gpg_command)s -c --verbose --no-use-agent --batch --yes --passphrase-fd %(passphrase_fd)s -o %(output_file)s %(input_file)s"
     gpg_decrypt = "%(gpg_command)s -d --verbose --no-use-agent --batch --yes --passphrase-fd %(passphrase_fd)s -o %(output_file)s %(input_file)s"
-    use_https = False
+    use_https = True
     ca_certs_file = ""
     check_ssl_certificate = True
+    check_ssl_hostname = True
     bucket_location = "US"
     default_mime_type = "binary/octet-stream"
     guess_mime_type = True
@@ -99,6 +104,7 @@ class Config(object):
     urlencoding_mode = "normal"
     log_target_prefix = ""
     reduced_redundancy = False
+    storage_class = ""
     follow_symlinks = False
     socket_timeout = 300
     invalidate_on_cf = False
@@ -113,11 +119,15 @@ class Config(object):
     cache_file = ""
     add_headers = ""
     remove_headers = []
-    ignore_failed_copy = False
     expiry_days = ""
     expiry_date = ""
     expiry_prefix = ""
     signature_v2 = False
+    limitrate = 0
+    requester_pays = False
+    stop_on_error = False
+    content_disposition = None
+    content_type = None
 
     ## Creating a singleton
     def __new__(self, configfile = None, access_key=None, secret_key=None):
@@ -129,7 +139,7 @@ class Config(object):
         if configfile:
             try:
                 self.read_config_file(configfile)
-            except IOError, e:
+            except IOError:
                 if 'AWS_CREDENTIAL_FILE' in os.environ:
                     self.env_config()
 
@@ -146,6 +156,12 @@ class Config(object):
                     self.secret_key = env_secret_key
                 else:
                     self.role_config()
+
+            #TODO check KMS key is valid
+            if self.kms_key and self.server_side_encryption == True:
+                warning('Cannot have server_side_encryption (S3 SSE) and KMS_key set (S3 KMS). KMS encryption will be used. Please set server_side_encryption to False')
+            if self.kms_key and self.signature_v2 == True:
+                raise Exception('KMS encryption requires signature v4. Please set signature_v2 to False')
 
     def role_config(self):
         if sys.version_info[0] * 10 + sys.version_info[1] < 26:
@@ -257,13 +273,27 @@ class Config(object):
             # support integer verboisities
             try:
                 value = int(value)
-            except ValueError, e:
+            except ValueError:
                 try:
                     # otherwise it must be a key known to the logging module
                     value = logging._levelNames[value]
                 except KeyError:
                     error("Config: verbosity level '%s' is not valid" % value)
                     return
+
+        elif option == "limitrate":
+            #convert kb,mb to bytes
+            if value.endswith("k") or value.endswith("K"):
+                shift = 10
+            elif value.endswith("m") or value.endswith("M"):
+                shift = 20
+            else:
+                shift = 0
+            try:
+                value = shift and int(value[:-1]) << shift or int(value)
+            except:
+                error("Config: value of option %s must have suffix m, k, or nothing, not '%s'" % (option, value))
+                return
 
         ## allow yes/no, true/false, on/off and 1/0 for boolean options
         elif type(getattr(Config, option)) is type(True):   # bool
@@ -278,9 +308,10 @@ class Config(object):
         elif type(getattr(Config, option)) is type(42):     # int
             try:
                 value = int(value)
-            except ValueError, e:
+            except ValueError:
                 error("Config: value of option '%s' must be an integer, not '%s'" % (option, value))
                 return
+
 
         setattr(Config, option, value)
 
