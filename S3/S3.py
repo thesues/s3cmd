@@ -280,6 +280,12 @@ class S3(object):
         return uri
 
     ## Commands / Actions
+    def list_user_usage(self):
+        request = self.create_request("LIST_ALL_BUCKETS", extra = "?usage")
+        response = self.send_request(request)
+	return response
+
+
     def list_all_buckets(self):
         request = self.create_request("LIST_ALL_BUCKETS")
         response = self.send_request(request)

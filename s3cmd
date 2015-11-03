@@ -112,6 +112,48 @@ def subcmd_bucket_usage(s3, uri):
     output(u"%s %s objects %s%s" % (total_size_str.ljust(8), object_count, uri, extra_info))
     return bucket_size
 
+
+def cmd_user_usage(args):
+    s3 = S3(Config())
+    response = s3.list_user_usage()
+    if response["status"] == 200:
+        #get all summary data
+        total_usage_sent_data = getTextFromXml(response['data'], ".//summary/user/total/bytes_sent")
+        total_usage_receive_data = getTextFromXml(response['data'], ".//summary/user/total/bytes_received")
+        total_usage_successful_ops = getTextFromXml(response['data'], ".//summary/user/total/successful_ops")
+        output(u"Summary Sent Data:%s, Received Data:%s, Total Ops:%s" % (total_usage_sent_data, total_usage_receive_data, total_usage_successful_ops))
+
+        for i in getTreeFromXml(response['data']).findall('.//entries/user/buckets/bucket'):
+            entries = i.findall(".//categories/entry/")
+            #this is a radosgw bug, it will return an empty bucket, so just skip it
+            if i.find("bucket").text == None:
+                continue
+            else:
+                bucket_name = i.find("bucket").text
+            put_obj_bytes = "0"
+            put_obj_ops = "0"
+
+            get_obj_bytes = "0"
+            get_obj_ops = "0"
+
+            list_bucket_bytes = "0"
+            list_bucket_ops = "0"
+
+            for entry in entries:
+                d = getDictFromTree(entry)
+                if d["category"] == "put_obj":
+                    put_obj_bytes = d["bytes_received"]
+                    put_obj_ops = d["ops"]
+                if d["category"] == "get_obj":
+                    get_obj_bytes = d["bytes_sent"]
+                    get_obj_ops = d["ops"]
+                if d["category"] == "list_bucket":
+                    list_bucket_bytes = d["bytes_sent"]
+                    list_bucket_ops = d["ops"]
+
+            output("%s Put_obj:%s bytes/%s ops, Get_obj:%s bytes/%s ops, List_bucket:%s bytes/%s ops" % 
+                   (bucket_name.ljust(8), put_obj_bytes.rjust(8), put_obj_ops, get_obj_bytes.rjust(8),get_obj_ops, list_bucket_bytes.rjust(8), list_bucket_ops))
+
 def cmd_ls(args):
     s3 = S3(Config())
     if len(args) > 0:
@@ -2251,6 +2293,7 @@ def get_commands_list():
     {"cmd":"mb", "label":"Make bucket", "param":"s3://BUCKET", "func":cmd_bucket_create, "argc":1},
     {"cmd":"rb", "label":"Remove bucket", "param":"s3://BUCKET", "func":cmd_bucket_delete, "argc":1},
     {"cmd":"ls", "label":"List objects or buckets", "param":"[s3://BUCKET[/PREFIX]]", "func":cmd_ls, "argc":0},
+    {"cmd":"usage", "label":"List usage of all buckets", "param":"", "func":cmd_user_usage, "argc":0},
     {"cmd":"la", "label":"List all object in all buckets", "param":"", "func":cmd_all_buckets_list_all_content, "argc":0},
     {"cmd":"put", "label":"Put file into bucket", "param":"FILE [FILE...] s3://BUCKET[/PREFIX]", "func":cmd_object_put, "argc":2},
     {"cmd":"get", "label":"Get file from bucket", "param":"s3://BUCKET/OBJECT LOCAL_FILE", "func":cmd_object_get, "argc":1},
