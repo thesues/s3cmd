@@ -115,7 +115,7 @@ def subcmd_bucket_usage(s3, uri):
 
 def cmd_user_usage(args):
     s3 = S3(Config())
-    response = s3.list_user_usage()
+    response = s3.list_user_usage(cfg.start_date, cfg.end_date)
     if response["status"] == 200:
         #get all summary data
         total_usage_sent_data = getTextFromXml(response['data'], ".//summary/user/total/bytes_sent")
@@ -128,8 +128,8 @@ def cmd_user_usage(args):
             #this is a radosgw bug, it will return an empty bucket, so just skip it
             if i.find("bucket").text == None:
                 continue
-            else:
-                bucket_name = i.find("bucket").text
+
+            bucket_name = i.find("bucket").text
             put_obj_bytes = "0"
             put_obj_ops = "0"
 
@@ -151,8 +151,9 @@ def cmd_user_usage(args):
                     list_bucket_bytes = d["bytes_sent"]
                     list_bucket_ops = d["ops"]
 
-            output("%s Put_obj:%s bytes/%s ops, Get_obj:%s bytes/%s ops, List_bucket:%s bytes/%s ops" % 
+            output("%s Put_obj:%s bytes/%s ops, Get_obj:%s bytes/%s ops, List_bucket:%s bytes/%s ops" %
                    (bucket_name.ljust(8), put_obj_bytes.rjust(8), put_obj_ops, get_obj_bytes.rjust(8),get_obj_ops, list_bucket_bytes.rjust(8), list_bucket_ops))
+        return EX_OK
 
 def cmd_ls(args):
     s3 = S3(Config())
@@ -2566,6 +2567,8 @@ def main():
     optparser.add_option(      "--stop-on-error", dest="stop_on_error", action="store_true", help="stop if error in transfer")
     optparser.add_option(      "--content-disposition", dest="content_disposition", action="store", help="Provide a Content-Disposition for signed URLs, e.g., \"inline; filename=myvideo.mp4\"")
     optparser.add_option(      "--content-type", dest="content_type", action="store", help="Provide a Content-Type for signed URLs, e.g., \"video/mp4\"")
+    optparser.add_option("--start-date", dest="start_date", action="store", help="usage statics from the date, only used for user_usage")
+    optparser.add_option("--end-date", dest="end_date", action="store", help="usage statics from the date, only used for user_usage")
 
     optparser.set_usage(optparser.usage + " COMMAND [parameters]")
     optparser.set_description('S3cmd is a tool for managing objects in '+

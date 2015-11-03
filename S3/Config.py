@@ -124,6 +124,8 @@ class Config(object):
     expiry_prefix = ""
     signature_v2 = False
     limitrate = 0
+    start_date = ""
+    end_date = ""
     requester_pays = False
     stop_on_error = False
     content_disposition = None
